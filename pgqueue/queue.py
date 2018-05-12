@@ -25,6 +25,7 @@ class Queue:
         return {'language': language}
 
     def enqueue(self, task, kwargs=None, execute_at=None, context=None):
+        assert not connection.in_atomic_block
         assert task in self.tasks
         kwargs = kwargs or {}
 
@@ -98,6 +99,11 @@ class Queue:
         return results[0]
 
     def run_job(self, job):
+        language = job.context.get('language')
+        with translation.override(language):
+            self._run_job(job)
+
+    def _run_job(self, job):
         task = self.tasks[job.task]
         start_time = time.time()
         retval = task(self, job)

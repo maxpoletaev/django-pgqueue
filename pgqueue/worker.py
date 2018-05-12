@@ -4,7 +4,6 @@ import sys
 import os
 
 from django.core.management import BaseCommand
-from django.utils import translation
 
 
 class Worker:
@@ -44,9 +43,7 @@ class Worker:
                 continue
 
             try:
-                language = job.context.get('language')
-                with translation.override(language):
-                    self.queue.run_job(job)
+                self.queue.run_job(job)
             except Exception as e:
                 self.logger.exception('Error in %r: %r.', job, e, extra={
                     'data': {
