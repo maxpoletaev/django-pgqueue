@@ -4,11 +4,7 @@ import copy
 
 from django.utils import timezone
 
-ATTEMPT_COUNTER = 'retry_attempt'
-
-
-def _delay(seconds):
-    return timezone.now() + timedelta(seconds=seconds)
+ATTEMPT_NUMBER = 'attempt_number'
 
 
 def repeat(interval):
@@ -49,15 +45,16 @@ def retry(exceptions, delay, max_attempts):
             try:
                 return func(queue, job)
             except Exception as e:
-                if not isinstance(e, tuple(exceptions)) or queue is None:
+                if not isinstance(e, tuple(exceptions)) \
+                        or queue is None:  # for testing reasosn
                     raise
 
-                attempt = job.context.get(ATTEMPT_COUNTER, 0) + 1
-                if attempt > max_attempts:
+                attempt = job.context.get(ATTEMPT_NUMBER, 0) + 1
+                if max_attempts is not None and attempt > max_attempts:
                     raise
 
-                context = copy.deepcopy(job.context)
-                context[ATTEMPT_COUNTER] = attempt
+                context = copy.copy(job.context)
+                context[ATTEMPT_NUMBER] = attempt
                 execute_at = timezone.now() + delay
                 queue.enqueue(job.task, job.kwargs, context=context, execute_at=execute_at)
 
