@@ -24,7 +24,7 @@ class Queue:
         language = translation.get_language()
         return {'language': language}
 
-    def enqueue(self, task, kwargs=None, execute_at=None, context=None):
+    def enqueue(self, task, kwargs=None, execute_at=None, priority=0, context=None):
         assert not connection.in_atomic_block
         assert task in self.tasks
         kwargs = kwargs or {}
@@ -33,7 +33,12 @@ class Queue:
         if context is not None:
             job_context.update(context)
 
-        job = Job(task=task, kwargs=kwargs, context=job_context)
+        job = Job(
+            task=task,
+            kwargs=kwargs,
+            priority=priority,
+            context=job_context,
+        )
         if execute_at:
             job.execute_at = execute_at
 
@@ -44,12 +49,11 @@ class Queue:
         self.logger.info('New job scheduled %r', job)
         return job
 
-    def enqueue_once(self, task, kwargs=None, execute_at=None, context=None):
+    def enqueue_once(self, task, kwargs=None, *args_, **kwargs_):
         job = Job.objects.filter(task=task, kwargs=kwargs or {}).first()
         if job is not None:
             return job
-
-        return self.enqueue(task, kwargs, execute_at, context)
+        return self.enqueue(task, kwargs, *args_, **kwargs_)
 
     def listen(self):
         with connection.cursor() as cur:
