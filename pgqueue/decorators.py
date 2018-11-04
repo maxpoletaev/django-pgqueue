@@ -1,10 +1,9 @@
-from datetime import timedelta
 from functools import wraps
 import copy
 
 from django.utils import timezone
 
-ATTEMPT_NUMBER = 'attempt_number'
+RETRY_ATTEMPT = 'retry_attempt'
 
 
 def repeat(interval):
@@ -46,15 +45,15 @@ def retry(exceptions, delay, max_attempts):
                 return func(queue, job)
             except Exception as e:
                 if not isinstance(e, tuple(exceptions)) \
-                        or queue is None:  # for testing reasosn
+                        or queue is None:  # for testing reasons
                     raise
 
-                attempt = job.context.get(ATTEMPT_NUMBER, 0) + 1
+                attempt = job.context.get(RETRY_ATTEMPT, 0) + 1
                 if max_attempts is not None and attempt > max_attempts:
                     raise
 
                 context = copy.copy(job.context)
-                context[ATTEMPT_NUMBER] = attempt
+                context[RETRY_ATTEMPT] = attempt
                 execute_at = timezone.now() + delay
                 queue.enqueue(job.task, job.kwargs, context=context, execute_at=execute_at)
 

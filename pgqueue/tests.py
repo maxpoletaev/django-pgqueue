@@ -1,4 +1,5 @@
 import time
+from contextlib import contextmanager
 from datetime import timedelta
 from threading import Thread
 from unittest import mock
@@ -19,13 +20,12 @@ def demo_task(queue, job):
 class QueueTest(SimpleTestCase):
     allow_database_queries = True
 
-    queue = Queue(
-        tasks={'demo_task': demo_task},
-        notify_channel='demo_queue',
-    )
-
     def setUp(self):
         self.db_objects = []
+        self.queue = Queue(
+            tasks={'demo_task': demo_task},
+            notify_channel='demo_queue',
+        )
 
     def tearDown(self):
         for obj in self.db_objects:
@@ -75,12 +75,30 @@ class QueueTest(SimpleTestCase):
 
 class WorkerTest(SimpleTestCase):
     allow_database_queries = True
-    worker = None
 
     class DemoWorker(Worker):
+        wait_timeout = 1
+
         def __init__(self, queue, *args, **kwargs):
-            self.queue = queue
             super().__init__(*args, **kwargs)
+            self.queue = queue
+
+        def start(self):
+            super().start()
+
+            # Close database connection when worker is stopped
+            # top prevent "database is being accessed by other users".
+            from django.db import connection
+            connection.close()
+
+        def stop(self):
+            self._shutdown = True
+
+        def bind_signals(self):
+            # Signals doesn't work if the worker is running not in
+            # the main thread, also there are no signals during
+            # tests running so let’s ignore them.
+            pass
 
     def setUp(self):
         self.db_objects = []
@@ -88,12 +106,16 @@ class WorkerTest(SimpleTestCase):
     def tearDown(self):
         for obj in self.db_objects:
             obj.delete()
-        if self.worker:
-            self.worker._shutdown = True
 
+    @contextmanager
     def start_worker(self, queue):
-        self.worker = self.DemoWorker(queue)
-        Thread(target=self.worker.start, daemon=True).start()
+        worker = self.DemoWorker(queue)
+        thread = Thread(target=worker.start, daemon=True)
+        thread.start()
+        yield worker
+        time.sleep(1)  # wait worker to finish the tasks
+        worker.stop()
+        thread.join()
 
     def test_enqueue(self):
         queue = Queue(
@@ -103,13 +125,12 @@ class WorkerTest(SimpleTestCase):
             },
             notify_channel='test_channel',
         )
-        self.start_worker(queue)
 
-        job1 = queue.enqueue('task1')
-        job2 = queue.enqueue('task2')
-        self.db_objects += [job1, job2]
+        with self.start_worker(queue):
+            job1 = queue.enqueue('task1')
+            job2 = queue.enqueue('task2')
+            self.db_objects += [job1, job2]
 
-        time.sleep(1)
         queue.tasks['task1'].assert_called()
         queue.tasks['task2'].assert_called()
 
@@ -142,7 +163,7 @@ class RetryDecoratorTest(SimpleTestCase):
     def test_retry(self):
         task = mock.Mock()
         task.side_effect = Exception()
-        wrapped_task = retry([Exception], delay_sec=1, max_attempts=3)(task)
+        wrapped_task = retry([Exception], delay=timedelta(seconds=1), max_attempts=3)(task)
 
         queue = Queue(tasks={'task': task}, notify_channel='test_channel')
         job = Job.objects.create(task='task')
@@ -151,12 +172,12 @@ class RetryDecoratorTest(SimpleTestCase):
         retry_job = Job.objects.last()
 
         self.assertEqual(retry_job.task, 'task')
-        self.assertEqual(retry_job.kwargs['retry_attempt'], 1)
+        self.assertEqual(retry_job.context['retry_attempt'], 1)
 
     def test_retry_delay(self):
         task = mock.Mock()
         task.side_effect = Exception()
-        wrapped_task = retry([Exception], delay_sec=10, max_attempts=10)(task)
+        wrapped_task = retry([Exception], delay=timedelta(seconds=10), max_attempts=10)(task)
 
         queue = Queue(tasks={'task': task}, notify_channel='test_channel')
         job = Job.objects.create(task='task')
@@ -173,7 +194,7 @@ class RetryDecoratorTest(SimpleTestCase):
     def test_retry_max_attempts(self):
         task = mock.Mock()
         task.side_effect = Exception()
-        wrapped_task = retry([Exception], delay_sec=1, max_attempts=10)(task)
+        wrapped_task = retry([Exception], delay=timedelta(seconds=1), max_attempts=10)(task)
 
         queue = Queue(tasks={'task': task}, notify_channel='test_channel')
         job = Job.objects.create(task='task')
@@ -181,7 +202,7 @@ class RetryDecoratorTest(SimpleTestCase):
         for n in range(10):
             wrapped_task(queue, job)
             job = Job.objects.order_by('created_at').last()
-            self.assertEqual(job.kwargs['retry_attempt'], n + 1)
+            self.assertEqual(job.context['retry_attempt'], n + 1)
 
         with self.assertRaises(Exception):
             wrapped_task(queue, job)

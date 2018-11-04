@@ -3,14 +3,18 @@ from django.contrib.postgres.fields import JSONField
 from django.db import models
 
 
+def lazy_empty_dict():
+    return {}
+
+
 class BaseJob(models.Model):
     id = models.BigAutoField(primary_key=True)
     task = models.CharField(max_length=255)
     created_at = models.DateTimeField(default=TransactionNow)
     execute_at = models.DateTimeField(default=TransactionNow)
     priority = models.PositiveIntegerField(default=0)
-    context = JSONField(default={}, blank=True)
-    kwargs = JSONField(default={}, blank=True)
+    context = JSONField(default=lazy_empty_dict, blank=True)
+    kwargs = JSONField(default=lazy_empty_dict, blank=True)
 
     class Meta:
         indexes = [

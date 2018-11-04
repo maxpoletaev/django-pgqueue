@@ -50,7 +50,7 @@ class Queue:
         return job
 
     def enqueue_once(self, task, kwargs=None, *args_, **kwargs_):
-        job = Job.objects.filter(task=task, kwargs=kwargs or {}).first()
+        job = self.job_model.objects.filter(task=task, kwargs=kwargs or {}).first()
         if job is not None:
             return job
         return self.enqueue(task, kwargs, *args_, **kwargs_)
@@ -94,7 +94,7 @@ class Queue:
         RETURNING *;
         """
         query = query.format(table=self.job_model._meta.db_table)
-        results = list(Job.objects.raw(query))
+        results = list(self.job_model.objects.raw(query))
         assert len(results) <= 1
 
         if not results:
@@ -105,7 +105,7 @@ class Queue:
     def run_job(self, job):
         language = job.context.get('language')
         with translation.override(language):
-            self._run_job(job)
+            return self._run_job(job)
 
     def _run_job(self, job):
         task = self.tasks[job.task]
