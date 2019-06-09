@@ -24,9 +24,12 @@ class Queue:
         language = translation.get_language()
         return {'language': language}
 
+    def in_atomic_block(self):
+        return connection.in_atomic_block
+
     def enqueue(self, task, kwargs=None, execute_at=None, priority=0, context=None):
-        assert not connection.in_atomic_block
-        assert task in self.tasks
+        assert not self.in_atomic_block(), 'Task cannot be executed inside a trasnaction'
+        assert task in self.tasks, 'Task "{}" not found in the task list'
         kwargs = kwargs or {}
 
         job_context = self.get_job_context()
@@ -41,8 +44,8 @@ class Queue:
         )
         if execute_at:
             job.execute_at = execute_at
-
         job.save()
+
         if self.notify_channel:
             self.notify(job)
 
