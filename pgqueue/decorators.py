@@ -59,3 +59,10 @@ def retry(exceptions, delay, max_attempts):
 
         return decorator
     return wrapper
+
+
+def job_kwargs(func):
+    @wraps(func)
+    def wrapper(queue, job):
+        return func(**job.kwargs)
+    return wrapper
