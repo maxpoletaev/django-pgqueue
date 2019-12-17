@@ -2,7 +2,7 @@ from setuptools import setup, find_packages
 
 setup(
     name='django-pgqueue',
-    version='0.9.2',
+    version='0.9.3',
     description='PostgreSQL-based task queue for Django',
     keywords='django postgres queue',
     packages=find_packages(),
